@@ -152,7 +152,7 @@ object AccountData {
         return httpClient
     }
 
-    suspend fun verifyLogin(context: Context, cookies: Map<String, String>): Boolean {
+    suspend fun verifyLogin(context: Context, cookies: Map<String, String>, userAgent: String = data.userAgent): Boolean {
         val map = cookies.toMutableMap()
         val httpClient = httpClient(context, map)
         val response = httpClient.get("https://www.zhihu.com/api/v4/me")
@@ -164,6 +164,7 @@ object AccountData {
                 Data(
                     login = true,
                     cookies = map,
+                    userAgent = userAgent,
                     username = person.name,
                     self = person,
                 ),
