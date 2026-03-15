@@ -196,6 +196,12 @@ private fun QRCodeLoginContent(
                     headers.append("User-Agent", randomUa)
                 }.raiseForStatus()
 
+            client
+                .post("https://www.zhihu.com/udid") {
+                    headers.append("User-Agent", randomUa)
+                    headers.append("X-Requested-With", "fetch")
+                }.raiseForStatus()
+
             val createResponse = client
                 .post("https://www.zhihu.com/api/v3/account/api/login/qrcode") {
                     signFetchRequest()
