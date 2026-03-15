@@ -49,7 +49,6 @@ import com.google.zxing.qrcode.QRCodeWriter
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
-import io.ktor.http.Url
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -166,7 +165,8 @@ private fun WebLoginContent(onOpenQrLogin: () -> Unit) {
 @Serializable
 private data class QrCodeCreateResponse(
     val expiresAt: Long,
-    val qrLink: String,
+    val link: String,
+    val token: String,
 )
 
 @Serializable
@@ -215,15 +215,14 @@ private fun QRCodeLoginContent(
                 error("二维码已过期，请重试")
             }
 
-            qrBitmap = generateQrBitmap(qr.qrLink)
+            qrBitmap = generateQrBitmap(qr.link)
             loading = false
 
-            val token = Url(qr.qrLink).pathSegments.lastOrNull().orEmpty()
-            if (token.isBlank()) error("二维码令牌为空")
+            if (qr.token.isBlank()) error("二维码令牌为空")
 
             while (System.currentTimeMillis() / 1000 < qr.expiresAt) {
                 val pollResponse = client
-                    .get("https://www.zhihu.com/api/v3/account/api/login/qrcode/$token") {
+                    .get("https://www.zhihu.com/api/v3/account/api/login/qrcode/${qr.token}") {
                         signFetchRequest()
                         headers.append("User-Agent", randomUa)
                     }.raiseForStatus()
