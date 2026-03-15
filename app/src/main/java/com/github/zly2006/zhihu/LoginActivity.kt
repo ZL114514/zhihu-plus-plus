@@ -191,15 +191,18 @@ private fun QRCodeLoginContent(
         val client = AccountData.httpClient(context, loginCookies)
 
         runCatching {
-            client.get("https://www.zhihu.com/signin") {
-                headers.append("User-Agent", randomUa)
-            }.raiseForStatus()
+            client
+                .get("https://www.zhihu.com/signin") {
+                    headers.append("User-Agent", randomUa)
+                }.raiseForStatus()
 
-            val createResponse = client.post("https://www.zhihu.com/api/v3/account/api/login/qrcode") {
-                signFetchRequest()
-                headers.append("User-Agent", randomUa)
-                headers.append("X-Requested-With", "fetch")
-            }.raiseForStatus().body<JsonObject>()
+            val createResponse = client
+                .post("https://www.zhihu.com/api/v3/account/api/login/qrcode") {
+                    signFetchRequest()
+                    headers.append("User-Agent", randomUa)
+                    headers.append("X-Requested-With", "fetch")
+                }.raiseForStatus()
+                .body<JsonObject>()
 
             val qr = AccountData.decodeJson<QrCodeCreateResponse>(createResponse)
             if (System.currentTimeMillis() / 1000 >= qr.expiresAt) {
