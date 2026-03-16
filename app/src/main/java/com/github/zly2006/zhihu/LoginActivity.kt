@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -85,79 +86,88 @@ class LoginActivity : ComponentActivity() {
 @Composable
 private fun WebLoginContent(onOpenQrLogin: () -> Unit) {
     val context = LocalContext.current
-    WebviewComp(
-        onLoad = { webView ->
-            webView.setupUpWebviewClient()
-            @SuppressLint("SetJavaScriptEnabled")
-            webView.settings.javaScriptEnabled = true
-            CookieManager.getInstance().removeAllCookies { }
-            webView.webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView?,
-                    request: WebResourceRequest,
-                ): Boolean {
-                    if (request.url.toString() == "https://www.zhihu.com/") {
-                        webView.settings.userAgentString = AccountData.ANDROID_USER_AGENT
+    Column(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        WebviewComp(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            onLoad = { webView ->
+                webView.setupUpWebviewClient()
+                @SuppressLint("SetJavaScriptEnabled")
+                webView.settings.javaScriptEnabled = true
+                webView.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest,
+                    ): Boolean {
+                        if (request.url.toString() == "https://www.zhihu.com/") {
+                            webView.settings.userAgentString = AccountData.ANDROID_USER_AGENT
+                        }
+                        return request.url?.scheme == "zhihu"
                     }
-                    return request.url?.scheme == "zhihu"
-                }
 
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    if (url == "https://www.zhihu.com/") {
-                        val cookies =
-                            CookieManager
-                                .getInstance()
-                                .getCookie("https://www.zhihu.com/")
-                                .orEmpty()
-                                .split(";")
-                                .associate {
-                                    it.substringBefore("=").trim() to it.substringAfter("=")
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        if (url == "https://www.zhihu.com/") {
+                            val cookies =
+                                CookieManager
+                                    .getInstance()
+                                    .getCookie("https://www.zhihu.com/")
+                                    .orEmpty()
+                                    .split(";")
+                                    .mapNotNull {
+                                        if (!it.contains("=")) return@mapNotNull null
+                                        it.substringBefore("=").trim() to it.substringAfter("=")
+                                    }.toMap()
+                            runBlocking {
+                                if (AccountData.verifyLogin(context, cookies)) {
+                                    val data = AccountData.loadData(context)
+                                    val preferences = context.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE)
+                                    print(preferences.toString())
+                                    AlertDialog
+                                        .Builder(context)
+                                        .apply {
+                                            setTitle("登录成功")
+                                            setMessage("欢迎回来，${data.username}")
+                                            setPositiveButton("OK") { _, _ -> }
+                                        }.create()
+                                        .show()
+                                    AccountData.saveData(context, data)
+                                    telemetry(context, "login")
+                                    (context as? LoginActivity)?.finish()
+                                } else {
+                                    AlertDialog
+                                        .Builder(context)
+                                        .apply {
+                                            setTitle("登录失败")
+                                            setMessage("请检查用户名和密码")
+                                            setPositiveButton("OK") { _, _ -> }
+                                        }.create()
+                                        .show()
                                 }
-                        runBlocking {
-                            if (AccountData.verifyLogin(context, cookies)) {
-                                val data = AccountData.loadData(context)
-                                val preferences = context.getSharedPreferences(PREFERENCE_NAME, android.content.Context.MODE_PRIVATE)
-                                print(preferences.toString())
-                                AlertDialog
-                                    .Builder(context)
-                                    .apply {
-                                        setTitle("登录成功")
-                                        setMessage("欢迎回来，${data.username}")
-                                        setPositiveButton("OK") { _, _ -> }
-                                    }.create()
-                                    .show()
-                                AccountData.saveData(context, data)
-                                telemetry(context, "login")
-                                (context as LoginActivity).finish()
-                            } else {
-                                AlertDialog
-                                    .Builder(context)
-                                    .apply {
-                                        setTitle("登录失败")
-                                        setMessage("请检查用户名和密码")
-                                        setPositiveButton("OK") { _, _ -> }
-                                    }.create()
-                                    .show()
                             }
                         }
                     }
                 }
-            }
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-            webView.loadUrl("https://www.zhihu.com/signin")
-        },
-    )
+                if (webView.url.isNullOrEmpty()) {
+                    CookieManager.getInstance().removeAllCookies { }
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+                    webView.loadUrl("https://www.zhihu.com/signin")
+                }
+            },
+        )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Bottom,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Button(onClick = onOpenQrLogin) {
-            Text("使用二维码登录")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Button(onClick = onOpenQrLogin) {
+                Text("使用二维码登录")
+            }
         }
     }
 }
