@@ -121,8 +121,12 @@ object AccountData {
 
     private var httpClient: HttpClient? = null
 
-    fun httpClient(context: Context, cookies: MutableMap<String, String>? = null): HttpClient {
-        if (httpClient != null && cookies == null) {
+    fun httpClient(
+        context: Context,
+        cookies: MutableMap<String, String>? = null,
+        userAgent: String? = null,
+    ): HttpClient {
+        if (httpClient != null && cookies == null && userAgent == null) {
             return httpClient!!
         }
         val httpClient = HttpClient {
@@ -134,10 +138,10 @@ object AccountData {
                 json(json)
             }
             install(UserAgent) {
-                agent = data.userAgent
+                agent = userAgent ?: data.userAgent
             }
         }
-        if (context is LifecycleOwner && cookies == null) { // 没有指定cookie
+        if (context is LifecycleOwner && cookies == null && userAgent == null) { // 没有指定cookie
             // 大概率是，包括 MainActivity 等。
             ContextCompat.getMainExecutor(context).execute {
                 context.lifecycle.addObserver(object : DefaultLifecycleObserver {
@@ -154,7 +158,7 @@ object AccountData {
 
     suspend fun verifyLogin(context: Context, cookies: Map<String, String>, userAgent: String = data.userAgent): Boolean {
         val map = cookies.toMutableMap()
-        val httpClient = httpClient(context, map)
+        val httpClient = httpClient(context, map, userAgent)
         val response = httpClient.get("https://www.zhihu.com/api/v4/me")
         if (response.status == HttpStatusCode.OK) {
             val jojo = response.body<JsonObject>()

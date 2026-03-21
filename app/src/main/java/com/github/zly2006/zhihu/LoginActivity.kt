@@ -48,8 +48,10 @@ import com.github.zly2006.zhihu.util.telemetry
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import io.ktor.client.call.body
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.post
+import io.ktor.client.request.header
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -198,25 +200,23 @@ private fun QRCodeLoginContent(
     LaunchedEffect(Unit) {
         val loginCookies = mutableMapOf<String, String>()
         val randomUa = randomLoginUserAgent()
-        val client = AccountData.httpClient(context, loginCookies)
+        val client = AccountData.httpClient(context, loginCookies, randomUa)
 
         runCatching {
             client
                 .get("https://www.zhihu.com/signin") {
-                    headers.append("User-Agent", randomUa)
+                    applyQrLoginHeaders(randomUa, referer = "https://www.zhihu.com/signin")
                 }.raiseForStatus()
 
             client
                 .post("https://www.zhihu.com/udid") {
-                    headers.append("User-Agent", randomUa)
-                    headers.append("X-Requested-With", "fetch")
+                    applyQrLoginHeaders(randomUa, referer = "https://www.zhihu.com/signin", fetch = true)
                 }.raiseForStatus()
 
             val createResponse = client
                 .post("https://www.zhihu.com/api/v3/account/api/login/qrcode") {
                     signFetchRequest()
-                    headers.append("User-Agent", randomUa)
-                    headers.append("X-Requested-With", "fetch")
+                    applyQrLoginHeaders(randomUa, referer = "https://www.zhihu.com/signin", fetch = true)
                 }.raiseForStatus()
                 .body<JsonObject>()
 
@@ -234,7 +234,7 @@ private fun QRCodeLoginContent(
                 val pollResponse = client
                     .get("https://www.zhihu.com/api/v3/account/api/login/qrcode/${qr.token}") {
                         signFetchRequest()
-                        headers.append("User-Agent", randomUa)
+                        applyQrLoginHeaders(randomUa, referer = qr.link, fetch = true)
                     }.raiseForStatus()
                     .body<JsonObject>()
 
@@ -293,11 +293,12 @@ private fun QRCodeLoginContent(
 }
 
 private fun randomLoginUserAgent(): String {
-    val androidVersions = listOf("10", "11", "12", "13", "14")
-    val devices = listOf("SM-G9980", "MI 14", "Pixel 8 Pro", "V2364A", "PJD110")
-    val chromeMain = Random.nextInt(120, 132)
-    return "Mozilla/5.0 (Linux; Android ${androidVersions.random()}; ${devices.random()}) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeMain.0.${Random.nextInt(1000, 9999)}.${Random.nextInt(10, 199)} Mobile Safari/537.36"
+    val chromeVersion = "${Random.nextInt(123, 136)}.0.${Random.nextInt(5600, 7100)}.${Random.nextInt(80, 220)}"
+    return listOf(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVersion Safari/537.36",
+    ).random()
 }
 
 private fun generateQrBitmap(content: String, size: Int = 800): Bitmap {
@@ -309,4 +310,26 @@ private fun generateQrBitmap(content: String, size: Int = 800): Bitmap {
         }
     }
     return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
+}
+
+private fun HttpRequestBuilder.applyQrLoginHeaders(
+    userAgent: String,
+    referer: String,
+    fetch: Boolean = false,
+) {
+    header("User-Agent", userAgent)
+    header("Accept", "application/json, text/plain, */*")
+    header("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
+    header("Origin", "https://www.zhihu.com")
+    header("Referer", referer)
+    if (fetch) {
+        header("X-Requested-With", "fetch")
+        header("Sec-Fetch-Dest", "empty")
+        header("Sec-Fetch-Mode", "cors")
+        header("Sec-Fetch-Site", "same-origin")
+    } else {
+        header("Sec-Fetch-Dest", "document")
+        header("Sec-Fetch-Mode", "navigate")
+        header("Sec-Fetch-Site", "same-origin")
+    }
 }
