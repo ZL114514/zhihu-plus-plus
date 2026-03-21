@@ -136,7 +136,8 @@ class MainActivity : ComponentActivity() {
                 this@MainActivity,
                 if (success) "已通过启动参数导入账号" else "启动参数导入账号失败",
                 if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
-            ).show()
+            )
+                .show()
             targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_PAYLOAD)
             targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_COOKIES)
             targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_USER_AGENT)
