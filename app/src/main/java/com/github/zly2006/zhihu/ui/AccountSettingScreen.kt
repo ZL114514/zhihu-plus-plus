@@ -37,6 +37,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,6 +74,7 @@ import com.github.zly2006.zhihu.util.clipboardManager
 import com.github.zly2006.zhihu.util.signFetchRequest
 import io.ktor.http.Url
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, DelicateCoroutinesApi::class)
 @Composable
@@ -98,6 +101,9 @@ fun AccountSettingScreen(
         }
     }
     val data by AccountData.asState()
+    val coroutineScope = rememberCoroutineScope()
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importText by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -229,6 +235,28 @@ fun AccountSettingScreen(
             ) {
                 Text("查看收藏夹")
             }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilledTonalButton(
+                    onClick = {
+                        val exportText = AccountData.exportTransferPayload()
+                        val clip = android.content.ClipData.newPlainText("account", exportText)
+                        context.clipboardManager.setPrimaryClip(clip)
+                        Toast.makeText(context, "账号导出串已复制到剪贴板", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("导出账号")
+                }
+                FilledTonalButton(
+                    onClick = { showImportDialog = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("导入账号")
+                }
+            }
         } else {
             Text(
                 "版本号：${BuildConfig.VERSION_NAME} ${BuildConfig.BUILD_TYPE}, ${BuildConfig.GIT_HASH}",
@@ -249,13 +277,24 @@ fun AccountSettingScreen(
                     },
                 ),
             )
-            Button(
-                onClick = {
-                    context.startActivity(Intent(context, LoginActivity::class.java))
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("登录")
+                Button(
+                    onClick = {
+                        context.startActivity(Intent(context, LoginActivity::class.java))
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("登录")
+                }
+                FilledTonalButton(
+                    onClick = { showImportDialog = true },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("导入账号")
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -380,6 +419,60 @@ fun AccountSettingScreen(
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             ),
+        )
+    }
+
+    if (showImportDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showImportDialog = false
+                importText = ""
+            },
+            title = { Text("导入账号") },
+            text = {
+                OutlinedTextField(
+                    value = importText,
+                    onValueChange = { importText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 4,
+                    label = { Text("导出串 / JSON / Cookie") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            val success = runCatching {
+                                AccountData.importAccount(
+                                    context = context,
+                                    payload = importText,
+                                )
+                            }.getOrElse {
+                                false
+                            }
+                            if (success) {
+                                Toast.makeText(context, "账号导入成功", Toast.LENGTH_SHORT).show()
+                                showImportDialog = false
+                                importText = ""
+                            } else {
+                                Toast.makeText(context, "账号导入失败，请检查内容是否有效", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                ) {
+                    Text("导入")
+                }
+            },
+            dismissButton = {
+                FilledTonalButton(
+                    onClick = {
+                        showImportDialog = false
+                        importText = ""
+                    },
+                ) {
+                    Text("取消")
+                }
+            },
         )
     }
 }
