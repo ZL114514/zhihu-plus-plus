@@ -1,6 +1,7 @@
 package com.github.zly2006.zhihu.data
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -44,6 +45,11 @@ import kotlinx.serialization.json.put
 import java.io.File
 
 object AccountData {
+    const val EXTRA_ACCOUNT_PAYLOAD = "account_payload"
+    const val EXTRA_ACCOUNT_COOKIES = "account_cookies"
+    const val EXTRA_ACCOUNT_USER_AGENT = "account_user_agent"
+    const val EXTRA_ACCOUNT_USE_DESKTOP_UA = "account_use_desktop_ua"
+
     val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -59,15 +65,22 @@ object AccountData {
 
     const val ANDROID_USER_AGENT = "com.zhihu.android/Futureve/10.61.0 Mozilla/5.0 (Linux; Android 12; sdk_gphone64_arm64 " +
         "Build/SE1A.220630.001.A1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/57.0.1000.10 Mobile Safari/537.36"
+    const val DESKTOP_USER_AGENT = "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/540.0 (KHTML, like Gecko) Ubuntu/10.10 Chrome/9.1.0.0 " +
+        "Safari/540.0"
 
     @Serializable
     data class Data(
         val login: Boolean = false,
         val username: String = "",
         val cookies: MutableMap<String, String> = mutableMapOf(),
-        val userAgent: String = "Mozilla/5.0 (X11; U; Linux x86_64; en-US) AppleWebKit/540.0 (KHTML, like Gecko) Ubuntu/10.10 Chrome/9.1.0.0 " +
-            "Safari/540.0",
+        val userAgent: String = DESKTOP_USER_AGENT,
         val self: Person? = null,
+    )
+
+    @Serializable
+    data class TransferData(
+        val cookies: Map<String, String>,
+        val userAgent: String = DESKTOP_USER_AGENT,
     )
 
     fun loadData(context: Context): Data {
@@ -88,6 +101,10 @@ object AccountData {
     fun asState() = dataState.collectAsState()
 
     fun saveData(context: Context, data: Data) {
+        if (dataState.value.userAgent != data.userAgent) {
+            httpClient?.close()
+            httpClient = null
+        }
         dataState.value = data
         // https://static.zhihu.com/zse-ck/v4/24df2abbfcb1b98cd5ce1b519f02eeabea28c83ac9d9ec2778dc5b03a3b8b710.js
         val file = File(context.filesDir, "account.json")
@@ -152,7 +169,11 @@ object AccountData {
         return httpClient
     }
 
-    suspend fun verifyLogin(context: Context, cookies: Map<String, String>): Boolean {
+    suspend fun verifyLogin(
+        context: Context,
+        cookies: Map<String, String>,
+        userAgent: String = data.userAgent,
+    ): Boolean {
         val map = cookies.toMutableMap()
         val httpClient = httpClient(context, map)
         val response = httpClient.get("https://www.zhihu.com/api/v4/me")
@@ -165,6 +186,7 @@ object AccountData {
                     login = true,
                     cookies = map,
                     username = person.name,
+                    userAgent = userAgent,
                     self = person,
                 ),
             )
@@ -260,6 +282,73 @@ object AccountData {
     suspend fun fetchPost(context: Context, url: String, block: suspend HttpRequestBuilder.() -> Unit = {}) = fetch(context, url) {
         block()
         method = HttpMethod.Post
+    }
+
+    fun exportTransferPayload(data: Data = this.data): String {
+        val transferData = TransferData(
+            cookies = data.cookies.toMap(),
+            userAgent = data.userAgent,
+        )
+        return Base64.encodeToString(
+            json.encodeToString(transferData).encodeToByteArray(),
+            Base64.NO_WRAP,
+        )
+    }
+
+    fun parseCookieHeader(cookieHeader: String): MutableMap<String, String> = cookieHeader
+        .split(";")
+        .mapNotNull { item ->
+            val trimmed = item.trim()
+            if (trimmed.isBlank() || "=" !in trimmed) {
+                null
+            } else {
+                trimmed.substringBefore("=") to trimmed.substringAfter("=")
+            }
+        }.toMap()
+        .toMutableMap()
+
+    fun decodeTransferPayload(payload: String): TransferData {
+        val normalized = payload.trim()
+        val decoded = runCatching {
+            String(Base64.decode(normalized, Base64.DEFAULT))
+        }.getOrElse {
+            normalized
+        }
+        return json.decodeFromString<TransferData>(decoded)
+    }
+
+    suspend fun importAccount(
+        context: Context,
+        payload: String? = null,
+        cookieHeader: String? = null,
+        userAgentOverride: String? = null,
+        useDesktopUserAgent: Boolean = false,
+    ): Boolean {
+        val transferData = when {
+            !payload.isNullOrBlank() -> {
+                runCatching {
+                    decodeTransferPayload(payload)
+                }.getOrElse {
+                    TransferData(cookies = parseCookieHeader(payload))
+                }
+            }
+            !cookieHeader.isNullOrBlank() -> TransferData(cookies = parseCookieHeader(cookieHeader))
+            else -> return false
+        }
+        if (transferData.cookies.isEmpty()) {
+            return false
+        }
+        val userAgent = when {
+            !userAgentOverride.isNullOrBlank() -> userAgentOverride
+            useDesktopUserAgent -> DESKTOP_USER_AGENT
+            transferData.userAgent.isNotBlank() -> transferData.userAgent
+            else -> data.userAgent
+        }
+        return verifyLogin(
+            context = context,
+            cookies = transferData.cookies,
+            userAgent = userAgent,
+        )
     }
 
     /**

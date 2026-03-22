@@ -110,6 +110,41 @@ class MainActivity : ComponentActivity() {
 
     lateinit var navController: NavHostController
 
+    private fun maybeImportAccountFromIntent(intent: Intent?) {
+        val targetIntent = intent ?: return
+        val payload = targetIntent.getStringExtra(AccountData.EXTRA_ACCOUNT_PAYLOAD)
+        val cookies = targetIntent.getStringExtra(AccountData.EXTRA_ACCOUNT_COOKIES)
+        val userAgent = targetIntent.getStringExtra(AccountData.EXTRA_ACCOUNT_USER_AGENT)
+        val useDesktopUserAgent = targetIntent.getBooleanExtra(AccountData.EXTRA_ACCOUNT_USE_DESKTOP_UA, false)
+        if (payload.isNullOrBlank() && cookies.isNullOrBlank()) {
+            return
+        }
+        lifecycleScope.launch {
+            val success = runCatching {
+                AccountData.importAccount(
+                    context = this@MainActivity,
+                    payload = payload,
+                    cookieHeader = cookies,
+                    userAgentOverride = userAgent,
+                    useDesktopUserAgent = useDesktopUserAgent,
+                )
+            }.getOrElse {
+                Log.e(TAG, "Failed to import account from intent", it)
+                false
+            }
+            Toast.makeText(
+                this@MainActivity,
+                if (success) "已通过启动参数导入账号" else "启动参数导入账号失败",
+                if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG,
+            )
+                .show()
+            targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_PAYLOAD)
+            targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_COOKIES)
+            targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_USER_AGENT)
+            targetIntent.removeExtra(AccountData.EXTRA_ACCOUNT_USE_DESKTOP_UA)
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
@@ -141,6 +176,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdgeCompat()
         history = HistoryStorage(this)
         AccountData.loadData(this)
+        maybeImportAccountFromIntent(intent)
         ThemeManager.initialize(this)
 
         val preferences = getSharedPreferences(PREFERENCE_NAME, MODE_PRIVATE)
@@ -592,6 +628,12 @@ class MainActivity : ComponentActivity() {
                 speakNextChunk(0)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        maybeImportAccountFromIntent(intent)
     }
 
     @Suppress("SameParameterValue")
